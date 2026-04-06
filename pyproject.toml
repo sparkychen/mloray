@@ -1,0 +1,30 @@
+[project]
+name = "mloray"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "orjson>=3.11.8",
+    "asyncpg>=0.31.0",
+    "psycopg[binary,pool]>=3.3.3",
+    "psycopg[c]>=3.3.3; sys_platform != 'win32'",
+    "fastapi[standard]>=0.135.3",
+    "fastapi-users>=15.0.5",
+    "mlflow==3.10.1",
+    "ray[all]==2.54.1",
+    "dvc[oss,s3]==3.66.1",
+    "transformers>=4.57.6,<5.0",
+    "adbc-driver-flightsql>=1.10.0",
+    "adbc-driver-manager>=1.10.0",
+    "pyarrow>=23.0.1",
+    "mysqlclient>=2.2.8",
+    "motor[encryption,snappy,zstd]>=3.7.1",
+    "beanie>=2.1.0",
+    "pygit2>=1.19.2",
+    "great-expectations<1.16.0",
+    "whylogs[embeddings,s3,viz]<1.7.0",
+    "evidently<0.8.0",
+    "arize-phoenix<13.23.0",
+    "feast>=0.61.0",
+]

@@ -1,0 +1,65 @@
+data_sources:
+  timescaledb:
+    host: "localhost"
+    port: 5432
+    database: "timeseries_data"
+    user: "postgres"
+    password: "password"
+    sslmode: "disable"
+    pool_size: 20
+    max_overflow: 30
+  
+  doris:
+    host: "localhost"
+    port: 9030
+    database: "analytics"
+    user: "root"
+    password: ""
+    connect_timeout: 10
+    read_timeout: 30
+  
+  neo4j:
+    uri: "bolt://localhost:7687"
+    user: "neo4j"
+    password: "password"
+    database: "neo4j"
+    max_connection_lifetime: 3600
+    max_connection_pool_size: 50
+  
+  s3:
+    endpoint_url: "http://localhost:9000"
+    aws_access_key_id: "minioadmin"
+    aws_secret_access_key: "minioadmin"
+    region_name: "us-east-1"
+    bucket_name: "mlops-data"
+    use_ssl: false
+  
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "mlops"
+    user: "postgres"
+    password: "password"
+    sslmode: "disable"
+
+data_ingestion:
+  batch_size: 10000
+  max_workers: 10
+  retry_attempts: 3
+  retry_delay: 5
+  timeout: 300
+
+data_validation:
+  great_expectations_context: "./gx/great_expectations"
+  validation_suites:
+    - name: "customer_data"
+      file_path: "./data/raw/customers.csv"
+    - name: "transaction_data"
+      file_path: "./data/raw/transactions.csv"
+  quality_threshold: 0.95
+
+data_versioning:
+  dvc_remote: "s3://mlops-data/dvc-store"
+  dvc_cache_dir: "./.dvc/cache"
+  auto_push: true
+  version_format: "%Y%m%d_%H%M%S"

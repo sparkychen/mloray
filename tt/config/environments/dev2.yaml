@@ -1,0 +1,72 @@
+# Development Environment Configuration
+default:
+  environment: "dev"
+  debug: true
+  log_level: "DEBUG"
+  
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    workers: 4
+    cors_origins: ["*"]
+  
+  database:
+    postgres_host: "localhost"
+    postgres_port: 5432
+    postgres_db: "mlops"
+    postgres_user: "postgres"
+    postgres_password: "password"
+    timescaledb_enabled: true
+  
+  storage:
+    s3_endpoint: "http://localhost:9000"
+    s3_access_key: "minioadmin"
+    s3_secret_key: "minioadmin"
+    s3_bucket: "mlops-data"
+    s3_region: "us-east-1"
+    use_minio: true
+    minio_endpoint: "http://localhost:9000"
+  
+  mlflow:
+    tracking_uri: "http://localhost:5000"
+    registry_uri: "sqlite:///mlruns.db"
+    experiment_name: "dev-experiment"
+    artifact_location: "s3://mlops-artifacts"
+  
+  ray:
+    address: "auto"
+    num_cpus: 4
+    num_gpus: 0
+    object_store_memory: 4000000000
+    dashboard_host: "0.0.0.0"
+    dashboard_port: 8265
+  
+  feature_store:
+    feast_registry_path: "feature_store/registry.db"
+    feast_online_store_type: "redis"
+    feast_offline_store_type: "file"
+    doris_host: "localhost"
+    doris_port: 9030
+    doris_user: "root"
+    doris_password: ""
+    doris_database: "feast"
+  
+  monitoring:
+    evidently_dash_port: 8050
+    phoenix_collector_endpoint: "http://localhost:6006"
+    whylogs_whylabs_key: null
+    whylogs_whylabs_org_id: null
+    alert_webhook_url: null
+    drift_threshold: 0.1
+    performance_threshold: 0.05
+  
+  neo4j:
+    uri: "bolt://localhost:7687"
+    user: "neo4j"
+    password: "password"
+    database: "neo4j"
+  
+  security:
+    secret_key: "dev-secret-key-change-in-production"
+    algorithm: "HS256"
+    access_token_expire_minutes: 30

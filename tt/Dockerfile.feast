@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Feast
+RUN pip install feast[postgres,redis]==0.61.0
+
+# Create directories
+RUN mkdir -p /app/feature_store
+
+WORKDIR /app/feature_store
+
+# Expose Feast server port
+EXPOSE 6566
+
+# Run Feast server
+CMD ["feast", "serve", "--host", "0.0.0.0", "--port", "6566"]

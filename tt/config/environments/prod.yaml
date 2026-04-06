@@ -1,0 +1,72 @@
+# Production Environment Configuration
+default:
+  environment: "prod"
+  debug: false
+  log_level: "INFO"
+  
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    workers: 8
+    cors_origins: ["https://your-domain.com"]
+  
+  database:
+    postgres_host: "postgres-prod.cluster.local"
+    postgres_port: 5432
+    postgres_db: "mlops_prod"
+    postgres_user: "${DB_USER}"
+    postgres_password: "${DB_PASSWORD}"
+    timescaledb_enabled: true
+  
+  storage:
+    s3_endpoint: "https://s3.amazonaws.com"
+    s3_access_key: "${AWS_ACCESS_KEY_ID}"
+    s3_secret_key: "${AWS_SECRET_ACCESS_KEY}"
+    s3_bucket: "mlops-prod-data"
+    s3_region: "us-east-1"
+    use_minio: false
+    minio_endpoint: ""
+  
+  mlflow:
+    tracking_uri: "http://mlflow-prod:5000"
+    registry_uri: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres-prod:5432/mlflow"
+    experiment_name: "prod-experiment"
+    artifact_location: "s3://mlops-prod-artifacts"
+  
+  ray:
+    address: "ray-prod-head:6379"
+    num_cpus: 32
+    num_gpus: 4
+    object_store_memory: 16000000000
+    dashboard_host: "0.0.0.0"
+    dashboard_port: 8265
+  
+  feature_store:
+    feast_registry_path: "s3://mlops-prod-data/feature_store/registry.db"
+    feast_online_store_type: "doris"
+    feast_offline_store_type: "doris"
+    doris_host: "doris-fe-prod.cluster.local"
+    doris_port: 9030
+    doris_user: "${DORIS_USER}"
+    doris_password: "${DORIS_PASSWORD}"
+    doris_database: "feast_prod"
+  
+  monitoring:
+    evidently_dash_port: 8050
+    phoenix_collector_endpoint: "http://phoenix-prod:6006"
+    whylogs_whylabs_key: "${WHYLABS_API_KEY}"
+    whylogs_whylabs_org_id: "${WHYLABS_ORG_ID}"
+    alert_webhook_url: "https://hooks.slack.com/services/your-webhook"
+    drift_threshold: 0.05
+    performance_threshold: 0.02
+  
+  neo4j:
+    uri: "bolt://neo4j-prod.cluster.local:7687"
+    user: "${NEO4J_USER}"
+    password: "${NEO4J_PASSWORD}"
+    database: "neo4j"
+  
+  security:
+    secret_key: "${SECRET_KEY}"
+    algorithm: "HS256"
+    access_token_expire_minutes: 15

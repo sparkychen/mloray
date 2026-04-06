@@ -1,0 +1,365 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with TimescaleDB
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: mlops-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mlops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: mlops-mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_BACKEND_STORE_URI: postgresql://postgres:password@postgres/mlflow
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: s3://mlops-artifacts
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --backend-store-uri ${MLFLOW_BACKEND_STORE_URI}
+      --default-artifact-root ${MLFLOW_DEFAULT_ARTIFACT_ROOT}
+      --host 0.0.0.0
+      --port 5000
+    volumes:
+      - ./config/mlflow:/mlflow
+    networks:
+      - mlops-network
+
+  # MinIO (S3 compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: mlops-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Redis (for caching and message queue)
+  redis:
+    image: redis:7-alpine
+    container_name: mlops-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass password
+    volumes:
+      - redis_data:/data
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Neo4j (graph database)
+  neo4j:
+    image: neo4j:5-enterprise
+    container_name: mlops-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*,gds.*
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # RabbitMQ (message queue)
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: mlops-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Prometheus (metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mlops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana (dashboard)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mlops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - mlops-network
+    depends_on:
+      prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Main API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mlops-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: postgresql://postgres:password@postgres/mlops
+      REDIS_URL: redis://:password@redis:6379/0
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./pipelines:/app/pipelines
+    command: >
+      uvicorn src.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 4
+      --reload
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mlops-celery-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: postgresql://postgres:password@postgres/mlops
+      REDIS_URL: redis://:password@redis:6379/0
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+    command: >
+      celery -A src.core.orchestrator.scheduler.celery_app worker
+      --loglevel=info
+      --concurrency=4
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./pipelines:/app/pipelines
+    networks:
+      - mlops-network
+
+  # Celery Beat (scheduler)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mlops-celery-beat
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: postgresql://postgres:password@postgres/mlops
+      REDIS_URL: redis://:password@redis:6379/0
+    command: >
+      celery -A src.core.orchestrator.scheduler.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./pipelines:/app/pipelines
+    networks:
+      - mlops-network
+
+  # Ray Head Node
+  ray-head:
+    image: rayproject/ray:2.54.1-py310
+    container_name: mlops-ray-head
+    ports:
+      - "6379:6379"
+      - "8265:8265"
+      - "10001:10001"
+    command: >
+      ray start
+      --head
+      --port=6379
+      --dashboard-host=0.0.0.0
+      --dashboard-port=8265
+      --node-ip-address=0.0.0.0
+      --num-cpus=4
+      --num-gpus=0
+      --object-store-memory=4000000000
+    networks:
+      - mlops-network
+    healthcheck:
+      test: ["CMD", "ray", "health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ray Worker Node
+  ray-worker:
+    image: rayproject/ray:2.54.1-py310
+    container_name: mlops-ray-worker
+    depends_on:
+      ray-head:
+        condition: service_started
+    command: >
+      ray start
+      --address=ray-head:6379
+      --node-ip-address=0.0.0.0
+      --num-cpus=4
+      --num-gpus=0
+      --object-store-memory=2000000000
+    networks:
+      - mlops-network
+
+  # Feast Feature Store Server
+  feast-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.feast
+    container_name: mlops-feast-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      FEAST_REGISTRY_PATH: /app/feature_store/registry.db
+      FEAST_ONLINE_STORE_TYPE: redis
+      FEAST_OFFLINE_STORE_TYPE: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: mlops
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "6566:6566"
+    volumes:
+      - feast_data:/app/feature_store
+    command: >
+      feast serve
+      --host 0.0.0.0
+      --port 6566
+    networks:
+      - mlops-network
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+  feast_data:
+
+networks:
+  mlops-network:
+    driver: bridge

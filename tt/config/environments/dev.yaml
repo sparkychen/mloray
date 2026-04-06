@@ -1,0 +1,371 @@
+# Development Environment Configuration
+
+# API Settings
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  debug: true
+  cors_origins: ["*"]
+  log_level: "DEBUG"
+
+# Database Configuration
+database:
+  postgres:
+    host: "postgres"
+    port: 5432
+    database: "mlops"
+    user: "postgres"
+    password: "postgres"
+    pool_size: 20
+    max_overflow: 30
+    pool_timeout: 30
+    pool_recycle: 3600
+  
+  timescaledb:
+    enabled: true
+    hypertables:
+      - name: "model_metrics"
+        time_column: "timestamp"
+        partitioning_column: "model_name"
+        number_partitions: 4
+      - name: "prediction_logs"
+        time_column: "created_at"
+        partitioning_column: "model_version"
+        number_partitions: 4
+
+# Storage Configuration
+storage:
+  s3:
+    endpoint: "http://minio:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket: "mlops-data"
+    region: "us-east-1"
+    secure: false
+  
+  local:
+    data_dir: "./data"
+    artifacts_dir: "./artifacts"
+
+# MLflow Configuration
+mlflow:
+  tracking_uri: "http://mlflow:5000"
+  registry_uri: "postgresql://postgres:postgres@postgres/mlflow"
+  experiment_name: "dev_experiments"
+  artifact_location: "s3://mlflow-artifacts/"
+  nested_runs: true
+  autolog:
+    enabled: true
+    log_models: true
+    log_datasets: true
+    log_input_examples: true
+
+# Ray Configuration
+ray:
+  address: "auto"
+  num_cpus: 4
+  num_gpus: 0
+  object_store_memory: 4000000000
+  dashboard_host: "0.0.0.0"
+  dashboard_port: 8265
+  runtime_env:
+    working_dir: "./src"
+    py_modules: []
+    env_vars:
+      PYTHONPATH: "./src"
+  
+  train:
+    scaling_config:
+      num_workers: 2
+      use_gpu: false
+      resources_per_worker:
+        CPU: 2
+        GPU: 0
+    
+  tune:
+    num_samples: 20
+    max_concurrent_trials: 4
+    grace_period: 10
+    reduction_factor: 3
+
+# Feature Store Configuration
+feature_store:
+  feast:
+    registry: "postgresql://postgres:postgres@postgres/feast"
+    project: "mlops_feature_store"
+    provider: "local"
+    
+    online_store:
+      type: "redis"
+      connection:
+        host: "redis"
+        port: 6379
+        db: 0
+    
+    offline_store:
+      type: "postgres"
+      connection:
+        host: "postgres"
+        port: 5432
+        database: "feast"
+        user: "postgres"
+        password: "postgres"
+    
+    entity_key_serialization_version: 2
+  
+  doris:
+    host: "localhost"
+    port: 9030
+    user: "root"
+    password: ""
+    database: "feast"
+    query_timeout: 300
+
+# DVC Configuration
+dvc:
+  remote: "minio"
+  cache:
+    dir: "./.dvc/cache"
+    type: "hardlink,symlink"
+  
+  remotes:
+    minio:
+      type: "s3"
+      endpointurl: "http://minio:9000"
+      access_key_id: "minioadmin"
+      secret_access_key: "minioadmin"
+      bucket: "dvc-store"
+    
+    gcs:
+      type: "gs"
+      projectname: "your-project"
+      credentialpath: "./credentials.json"
+  
+  data:
+    tracked_dirs:
+      - "data/raw"
+      - "data/processed"
+      - "data/features"
+    ignored_patterns:
+      - "*.tmp"
+      - "*.log"
+      - "*.bak"
+
+# Monitoring Configuration
+monitoring:
+  # Data Quality
+  great_expectations:
+    context_root_dir: "./great_expectations"
+    expectation_suites:
+      - name: "raw_data_suite"
+        columns:
+          - "id"
+          - "timestamp"
+          - "value"
+      - name: "processed_data_suite"
+        columns: 
+          - "feature_1"
+          - "feature_2"
+          - "label"
+  
+  # Drift Detection
+  drift:
+    detection_methods:
+      - "ks_test"
+      - "psi"
+      - "classifier"
+    thresholds:
+      ks_test: 0.05
+      psi: 0.1
+      mmd: 0.05
+    
+    schedule:
+      daily: true
+      hour: 2
+      minute: 0
+    
+    reference_data:
+      window_days: 30
+      update_frequency: "weekly"
+  
+  # Performance Monitoring
+  performance:
+    metrics:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1"
+      - "auc"
+      - "mae"
+      - "mse"
+      - "r2"
+    
+    thresholds:
+      accuracy: 0.8
+      precision: 0.7
+      recall: 0.7
+      f1: 0.7
+    
+    alerting:
+      enabled: true
+      channels:
+        - "slack"
+        - "email"
+        - "pagerduty"
+      cooldown_minutes: 30
+  
+  # Tracing
+  tracing:
+    enabled: true
+    exporter: "jaeger"
+    jaeger:
+      host: "jaeger"
+      port: 6831
+    sampling_rate: 0.1
+
+# Security Configuration
+security:
+  # JWT Settings
+  jwt:
+    secret_key: "your-super-secret-jwt-key-change-in-production"
+    algorithm: "HS256"
+    access_token_expire_minutes: 30
+    refresh_token_expire_days: 7
+  
+  # API Keys
+  api_keys:
+    enabled: true
+    rotation_days: 90
+  
+  # CORS
+  cors:
+    enabled: true
+    origins: ["*"]
+    methods: ["*"]
+    headers: ["*"]
+    credentials: true
+  
+  # Rate Limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+    burst_limit: 20
+
+# Neo4j Configuration
+neo4j:
+  uri: "bolt://neo4j:7687"
+  user: "neo4j"
+  password: "password"
+  database: "neo4j"
+  
+  # Graph Schema
+  schema:
+    nodes:
+      - label: "Model"
+        properties: ["name", "version", "framework", "status"]
+      
+      - label: "Dataset"
+        properties: ["name", "version", "source", "size"]
+      
+      - label: "Feature"
+        properties: ["name", "type", "importance"]
+      
+      - label: "Experiment"
+        properties: ["id", "name", "status", "metrics"]
+    
+    relationships:
+      - type: "TRAINED_WITH"
+        from: "Model"
+        to: "Dataset"
+      
+      - type: "USES_FEATURE"
+        from: "Model"
+        to: "Feature"
+      
+      - type: "PRODUCED_BY"
+        from: "Model"
+        to: "Experiment"
+
+# Alerting Configuration
+alerting:
+  slack:
+    webhook_url: ${SLACK_WEBHOOK_URL}
+    channel: "#mlops-alerts"
+    username: "MLOps Bot"
+    icon_emoji: ":robot_face:"
+  
+  email:
+    enabled: true
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    smtp_user: ${EMAIL_USER}
+    smtp_password: ${EMAIL_PASSWORD}
+    from_email: "mlops@company.com"
+    to_emails: ["team@company.com"]
+  
+  pagerduty:
+    enabled: false
+    integration_key: ${PAGERDUTY_KEY}
+    service_id: ${PAGERDUTY_SERVICE_ID}
+  
+  rules:
+    - name: "data_drift_detected"
+      condition: "drift_score > 0.1"
+      severity: "high"
+      channels: ["slack", "email"]
+    
+    - name: "model_performance_degradation"
+      condition: "accuracy < 0.7"
+      severity: "critical"
+      channels: ["slack", "email", "pagerduty"]
+    
+    - name: "pipeline_failed"
+      condition: "status == 'failed'"
+      severity: "medium"
+      channels: ["slack"]
+    
+    - name: "resource_usage_high"
+      condition: "cpu_usage > 90 or memory_usage > 90"
+      severity: "warning"
+      channels: ["slack"]
+
+# Workflow Configuration
+workflows:
+  data_processing:
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    timeout_minutes: 120
+    retry_policy:
+      max_retries: 3
+      delay_seconds: 60
+      backoff_factor: 2
+  
+  training:
+    schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
+    timeout_minutes: 240
+    retry_policy:
+      max_retries: 2
+      delay_seconds: 300
+      backoff_factor: 2
+  
+  monitoring:
+    schedule: "*/30 * * * *"  # Every 30 minutes
+    timeout_minutes: 30
+    retry_policy:
+      max_retries: 1
+      delay_seconds: 30
+  
+  retraining:
+    triggers:
+      - type: "drift"
+        threshold: 0.1
+        cooldown_days: 1
+      
+      - type: "performance"
+        metric: "accuracy"
+        threshold: 0.7
+        window_days: 7
+        cooldown_days: 2
+      
+      - type: "schedule"
+        cron: "0 4 * * 1"  # Weekly on Monday at 4 AM
