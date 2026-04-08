@@ -1,0 +1,75 @@
+flowchart LR
+    %% 🎨 样式定义：区分数据流、控制流、存储、闭环
+    classDef data fill:#BBDEFB,stroke:#1565C0,stroke-width:3px
+    classDef ctrl fill:#FFE0B2,stroke:#F57C00,stroke-width:2px,stroke-dasharray: 6 4
+    classDef store fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    classDef loop fill:#FCE4EC,stroke:#C2185B,stroke-width:3px,stroke-dasharray: 8 4
+    classDef highlight fill:#FFF9C4,stroke:#FBC02D,stroke-width:4px
+
+    %% ================= 主干数据流水线 (左 → 右) =================
+    subgraph Stage1 [📥 阶段一：数据接入与版本治理]
+        direction TB
+        A1[业务数据源API/...] -->|原始数据流| FastAPI_Ingest[FastAPI 采集网关]
+        FastAPI_Ingest -->|落盘| TimescaleDB[PG/TimescaleDB]
+        TimescaleDB -->|抽样校验| GE[Great Expectations 质量校验]
+        GE -->|校验报告| Check{数据质量门禁}
+        Check -->|✅ 通过| Pg_Clean[(PG/TimescaleDB)]
+        Check -->|❌ 拦截| Quarantine[异常隔离 & 告警]
+    end
+
+    subgraph Stage2 [⚙️ 阶段二：特征工程与一致性]
+        direction TB
+        Pg_Clean -->|清洗后数据| Ray_Feat[Ray Data 分布式计算]
+        Ray_Feat -->|注册/转换逻辑| Feast[Feast 特征库]
+        Feast -->|离线批量回灌| Doris[(Doris 离线特征库)]
+        Feast -->|在线实时同步| PG_Online[(PG/TimescaleDB 在线特征库)]
+        Ray_Feat -->|流式统计| Whylogs_1[whylogs 实时画像]
+        Whylogs_1 -->|分布基线Profile| PG_Online[(PG/TimescaleDB 在线特征)]
+    end
+
+    subgraph Stage3 [🧠 阶段三：模型训练与超参优化]
+        direction TB
+        Doris -->|dvc track| DVC[DVC 数据版本控制]
+        PG_Online -->|dvc track| DVC[DVC 数据版本控制]
+        DVC -->|锁定数据版本| Ray_Train
+        Ray_Train -->|实验追踪| MLflow_Trk[MLflow Tracking]
+        Ray_Train -->|HPO搜索空间| Ray_Tune[Ray Tune 调优]
+        Ray_Tune -->|Trial指标回调| MLflow_Trk
+        MLflow_Trk -->|模型工件/日志| S3_Model[(S3 模型产物)]
+        MLflow_Trk -->|册| Reg_Staging[MLflow Registry: Staging]
+    end
+
+    subgraph Stage4 [🚀 阶段四：模型注册与高可用服务]
+        direction TB
+        Reg_Staging -->|审批/规则评估| Decision{上线决策}
+        Decision -->|✅ 晋升| Reg_Prod[MLflow Registry: Production]
+        Reg_Prod -->|更新路由配置| PG_Route[(PG 路由配置表)]
+        PG_Route -->|动态流量权重| FastAPI_API[FastAPI 推理网关]
+        FastAPI_API -->|请求转发| Ray_Serve[Ray Serve 推理集群]
+        Ray_Serve -->|实时特征查询| PG_Online
+        Ray_Serve -->|返回预测结果| Client[业务应用/终端]
+    end
+
+    subgraph Stage5 [📊 阶段五：全链路监控与评估]
+        direction TB
+        Client -->|推理日志/Trace流| Logs[(推理事件日志DB/S3 )]
+        Logs -->|流式聚合| Whylogs_2[whylogs 实时画像]
+        Logs -->|全链路调用追踪| Phoenix[Arize Phoenix]
+        Whylogs_2 & Logs -->|周期对比分析| Evidently[Evidently 漂移检测]
+        Evidently & Phoenix & Whylogs_2 -->|漂移指标/性能指标| TSDB[(TimescaleDB 时序库)]
+        TSDB -->|阈值/异常规则| Alert[监控决策引擎]
+    end
+
+    %% ================= 🔄 显式数据闭环回流路径 =================
+    Alert -->|🔴 性能恶化/漂移超标| FastAPI_API
+    FastAPI_API -->|⚡ 秒级流量切换/回滚| PG_Route
+    Alert -->|🔄 触发重训流水线| FastAPI_Retrain[FastAPI 重训调度器]
+    FastAPI_Retrain -->|拉取最新DVC数据 & 新基线| Stage3
+    FastAPI_Retrain -->|下发新实验配置| Stage3
+
+    %% 样式绑定
+    class S3_Raw,S3_Clean,S3_Model,S3_Logs,S3_Base data
+    class FastAPI_Ingest,FastAPI_API,FastAPI_Retrain,Alert,Check,Decision,PG_Route ctrl
+    class Doris,PG_Online,TSDB,Reg_Staging,Reg_Prod,PG_Route,Quarantine,S3_Raw,S3_Clean,S3_Model,S3_Logs,S3_Base store
+    class FastAPI_Retrain,Stage1,Stage2,Stage3,Stage4,Stage5 loop
+
